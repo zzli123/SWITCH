@@ -257,6 +257,7 @@ class PoisDataDecoder(torch.nn.Module):
 
         return (feature_dist, adj_rec)
 
+# modified from https://github.com/gao-lab/GLUE
 class ZINB(D.NegativeBinomial):
 
     def __init__(
@@ -297,6 +298,7 @@ class ZINBDataDecoder(NBDataDecoder):
 
         return (feature_dist, adj_rec)
 
+# modified from https://github.com/scverse/scvi-tools
 class NegativeBinomialMixture(Distribution):
 
     def __init__(
