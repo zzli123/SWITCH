@@ -4,7 +4,7 @@ print("=============Running JAMIE=================")
 import warnings
 warnings.filterwarnings("ignore")
 import sys
-sys.path.append("/mnt/datadisk/lizhongzhan/SpaMultiOmics/main/")
+sys.path.append("../main/")
 import scanpy as sc
 from jamie import JAMIE
 from jamie.evaluation import *
@@ -20,9 +20,9 @@ print(f"paired fraction: {fraction}")
 
 
 np.random.seed(42)
-model_folder = '/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure2/JAMIE/output/saved_models/'
-image_folder = '/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure2/JAMIE/output/output_figures/'
-output_folder = '/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure2/JAMIE/output/output_data/'
+model_folder = ''
+image_folder = ''
+output_folder = ''
 
 
 rna = sc.read_h5ad(data_dir+"/rna-pp.h5ad")
@@ -111,8 +111,3 @@ print(f"unpaired atac shape: {imputed_atac.shape[0], imputed_atac.shape[1]}")
 
 paired_rna.write(save_dir+"JAMIE_paired_rna.h5ad")
 paired_atac.write(save_dir+"JAMIE_paired_atac.h5ad")
-
-
-
-
-
