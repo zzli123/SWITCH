@@ -91,7 +91,3 @@ print(f"paired rna shape: {paired_rna.shape[0], paired_rna.shape[1]}")
 print(f"paired atac shape: {paired_atac.shape[0], paired_atac.shape[1]}")
 print(f"unpaired rna shape: {imputed_rna.shape[0], imputed_rna.shape[1]}")
 print(f"unpaired atac shape: {imputed_atac.shape[0], imputed_atac.shape[1]}")
-
-
-
-
