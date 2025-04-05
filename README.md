@@ -17,3 +17,6 @@ The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show
 
 ## Benchmarking
 In our study, we compared SWITCH with 9 state-of-the-art single-cell multi-omics integration methods, including Seurat (V3), LIGER, BindSC, GLUE, SCALEX, MaxFuse, SIMBA, scConfluence and Monae, as well as with 4 state-of-the-art cross-modal translation methods, including JAMIE, MultiVI, scButterfly, and Monae. Jupyter notebooks covering the benchmarking analysis in this paper are included in the `Benchmark/others` folder.
+
+## Support
+If you have any questions, please contact us [zzli@tongji.edu.cn](mailto:zzli@tongji.edu.cn).
