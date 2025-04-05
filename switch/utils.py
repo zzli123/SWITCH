@@ -329,26 +329,26 @@ def refine_labels(adata, label_key, copy=False):
     
     return adata.copy() if copy else None
 
-def mclust_R(adata, n_cluster, use_rep, modelNames='EEE', random_seed=0, key_added="mclust"):
-    """\
-    Clustering using the mclust algorithm.
-    The parameters are the same as those in the R package mclust.
-    """
+# def mclust_R(adata, n_cluster, use_rep, modelNames='EEE', random_seed=0, key_added="mclust"):
+#     """\
+#     Clustering using the mclust algorithm.
+#     The parameters are the same as those in the R package mclust.
+#     """
     
-    np.random.seed(random_seed)
-    import rpy2.robjects as robjects
-    robjects.r.library("mclust")
+#     np.random.seed(random_seed)
+#     import rpy2.robjects as robjects
+#     robjects.r.library("mclust")
 
-    import rpy2.robjects.numpy2ri
-    rpy2.robjects.numpy2ri.activate()
-    r_random_seed = robjects.r['set.seed']
-    r_random_seed(random_seed)
-    rmclust = robjects.r['Mclust']
+#     import rpy2.robjects.numpy2ri
+#     rpy2.robjects.numpy2ri.activate()
+#     r_random_seed = robjects.r['set.seed']
+#     r_random_seed(random_seed)
+#     rmclust = robjects.r['Mclust']
     
-    res = rmclust(rpy2.robjects.numpy2ri.numpy2rpy(adata.obsm[use_rep]), n_cluster, modelNames)
-    mclust_res = np.array(res[-2])
+#     res = rmclust(rpy2.robjects.numpy2ri.numpy2rpy(adata.obsm[use_rep]), n_cluster, modelNames)
+#     mclust_res = np.array(res[-2])
 
-    adata.obs[key_added] = mclust_res
-    adata.obs[key_added] = adata.obs[key_added].astype('int')
-    adata.obs[key_added] = adata.obs[key_added].astype('category')
-    return adata
+#     adata.obs[key_added] = mclust_res
+#     adata.obs[key_added] = adata.obs[key_added].astype('int')
+#     adata.obs[key_added] = adata.obs[key_added].astype('category')
+#     return adata
