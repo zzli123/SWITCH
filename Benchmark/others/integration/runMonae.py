@@ -8,10 +8,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-import sys
-sys.path.append('/mnt/datadisk/lizhongzhan/SpaMultiOmics/main/')
 import scglue
-from switch import preprocess
 from monae.src.config import configure_dataset
 from monae.src.train import covel_train
 import dill
@@ -24,30 +21,27 @@ n_clus = int(sys.argv[3])
 peak_data_name = str(sys.argv[4])
 
 
-wk_dir = "/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure1/Monae/"
+wk_dir = ""
 import os
 os.chdir(wk_dir)
 
 rna = anndata.read_h5ad(data_dir+"/rna-pp.h5ad")
 atac = anndata.read_h5ad(data_dir+"/"+peak_data_name)
 
-# preprocess.get_gene_annotation(rna, 
-#                     gtf=data_dir+"/gencode.v47.annotation.gtf.gz",
-#                     gtf_by="gene_name",
-#                     drop_na=True
-# )
 from itertools import chain
 
-# split = atac.var_names.str.split(r"[:-]")
-# atac.var["chrom"] = split.map(lambda x: x[0])
-# atac.var["chromStart"] = split.map(lambda x: x[1]).astype(int)
-# atac.var["chromEnd"] = split.map(lambda x: x[2]).astype(int)
+split = atac.var_names.str.split(r"[:-]")
+atac.var["chrom"] = split.map(lambda x: x[0])
+atac.var["chromStart"] = split.map(lambda x: x[1]).astype(int)
+atac.var["chromEnd"] = split.map(lambda x: x[2]).astype(int)
 # print(i.var)
-guidance = nx.read_graphml(data_dir+"/guidance.graphml.gz")
 
-# guidance_hvf = nx.read_graphml("guidance_hvf.graphml.gz")
+scglue.data.get_gene_annotation(
+    rna, gtf="../Mouse_embryo/gencode.vM25.chr_patch_hapl_scaff.annotation.gtf.gz",
+    gtf_by="gene_name"
+)
+guidance = scglue.genomics.rna_anchored_guidance_graph(rna, atac)
 
-# guidance = scglue.genomics.rna_anchored_guidance_graph(rna, atac)
 graph = guidance.subgraph(chain(
     rna.var.query("highly_variable").index,
     atac.var.query("highly_variable").index
