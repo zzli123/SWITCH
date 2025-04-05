@@ -15,7 +15,7 @@ import os
 import sys
 data_dir = str(sys.argv[1])
 save_dir = str(sys.argv[2])
-wk_dir = "/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure1/scConfluence/"
+wk_dir = ""
 n_clus = int(sys.argv[3])
 peak_data_name = str(sys.argv[4])
 
