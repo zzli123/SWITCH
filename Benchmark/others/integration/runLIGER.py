@@ -16,18 +16,8 @@ peak_data_name = str(sys.argv[4])
 rna = sc.read_h5ad(data_dir+"/rna-pp.h5ad")
 
 # %%
-# genescore = pd.read_csv("gs.csv", index_col=0)
-# genescore = genescore.transpose()
-# # genescore.index = ["H3keme3"+i.split(".")[1]+"-1" for i in list(genescore.index)]
-# genescore = sc.AnnData(X=genescore)
-
-# %%
 genescore = sc.read_h5ad(data_dir+"/simba_gs.h5ad")
 
-# %%
-# cells = [i for i in list(rna.obs_names) if i in list(genescore.obs_names) ]
-# genescore = genescore[cells,]
-# genescore
 
 # %%
 rna.obs_names = ["RNA#"+i for i in list(rna.obs_names)]
