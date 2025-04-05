@@ -16,7 +16,7 @@ save_dir = str(sys.argv[2])
 n_clus = int(sys.argv[3])
 peak_data_name = str(sys.argv[4])
 
-wk_dir = "/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure1/SCALEX/"
+wk_dir = ""
 
 # %%
 rna = sc.read_h5ad(data_dir+"/rna-pp.h5ad")
