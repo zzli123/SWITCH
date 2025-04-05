@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import sys
-sys.path.append("/mnt/datadisk/lizhongzhan/SpaMultiOmics/main/MaxFuse_devo/09302022V/")
+sys.path.append("../main/MaxFuse_devo/09302022V/")
 import match
 
 import anndata as ad
