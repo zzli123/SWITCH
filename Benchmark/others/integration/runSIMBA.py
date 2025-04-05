@@ -2,7 +2,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 import sys
-sys.path.append("/mnt/datadisk/lizhongzhan/SpaMultiOmics/main/simba/")
+sys.path.append("../main/simba/")
 
 # %%
 import os
@@ -18,7 +18,7 @@ if __name__=='__main__':
     peak_data_name = str(sys.argv[4])
 
     # %%
-    workdir = '/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure1/SIMBA/'
+    workdir = ''
     si.settings.set_workdir(workdir)
     si.settings.pbg_params["workers"] = 10
 
@@ -33,7 +33,7 @@ if __name__=='__main__':
 
     # %%
     # sc.pp.filter_genes(atac, min_cells=atac.shape[0]*0.01)
-    atac = atac[:, atac.var["highly_variable"]]
+    # atac = atac[:, atac.var["highly_variable"]]
 
     # %%
     si.pp.filter_peaks(atac,min_n_cells=3)
