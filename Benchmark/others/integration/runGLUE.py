@@ -1,7 +1,5 @@
 # %%
 import warnings
-import sys
-sys.path.append("/mnt/datadisk/lizhongzhan/SpaMultiOmics/main/")
 import anndata as ad
 import networkx as nx
 import scanpy as sc
@@ -12,10 +10,9 @@ import scglue
 from itertools import chain
 
 import sys
-from switch import preprocess
 data_dir = str(sys.argv[1])
 save_dir = str(sys.argv[2])
-wk_dir = "/mnt/datadisk/lizhongzhan/SpaMultiOmics/SCRIPT/Figure1/GLUE/"
+wk_dir = ""
 n_clus = int(sys.argv[3])
 peak_data_name = str(sys.argv[4])
 
@@ -35,37 +32,20 @@ seed_everything(111)
 rna = ad.read_h5ad(data_dir+"/rna-pp.h5ad")
 atac = ad.read_h5ad(data_dir+"/"+peak_data_name)
 
-# preprocess.get_gene_annotation(rna, 
-#                     gtf=data_dir+"/gencode.v47.annotation.gtf.gz",
-#                     gtf_by="gene_name",
-#                     drop_na=True
-# )
-
 rna.layers["counts"] = rna.X.copy()
-# sc.pp.highly_variable_genes(rna, n_top_genes=2000, flavor="seurat_v3",layer="counts")
+sc.pp.highly_variable_genes(rna, n_top_genes=2000, flavor="seurat_v3",layer="counts")
 
 split = atac.var_names.str.split(r"[:-]")
 atac.var["chrom"] = split.map(lambda x: x[0])
 atac.var["chromStart"] = split.map(lambda x: x[1]).astype(int)
 atac.var["chromEnd"] = split.map(lambda x: x[2]).astype(int)
 # print(i.var)
-guidance = nx.read_graphml(data_dir+"/guidance.graphml.gz")
 
-# guidance_hvf = nx.read_graphml("guidance_hvf.graphml.gz")
-
-# guidance = scglue.genomics.rna_anchored_guidance_graph(rna, atac)
-# guidance = preprocess.rna_anchored_guidance_graph(rna, atac)
-
-
-# rna = rna[:,rna.var["highly_variable"]]
-# atac = atac[:, atac.var["highly_variable"]]
-# sc.pp.filter_cells(rna, min_counts=1)
-# sc.pp.filter_genes(rna, min_counts=1)
-# sc.pp.filter_cells(atac, min_counts=1)
-# sc.pp.filter_genes(atac, min_counts=1)
-# cm_obs = list(set(rna.obs_names) & set(atac.obs_names))
-# rna = rna[cm_obs]
-# atac = atac[cm_obs]
+scglue.data.get_gene_annotation(
+    rna, gtf="../Mouse_embryo/gencode.vM25.chr_patch_hapl_scaff.annotation.gtf.gz",
+    gtf_by="gene_name"
+)
+guidance = scglue.genomics.rna_anchored_guidance_graph(rna, atac)
 
 guidance_hvf = guidance.subgraph(chain(
     rna.var.query("highly_variable").index,
