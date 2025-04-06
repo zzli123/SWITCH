@@ -11,7 +11,7 @@ pip install -r requirement.txt
 ```
 
 ## Tutorials
-The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show how to use SWITCH. 
+The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show how to use SWITCH.  Running Tutorial 1 is expected to take around 10 minutes.
 
 - Tutorial 1: Integrating E13 Mouse embryo (Spatial-ATAC-RNA-seq)
 - Tutorial 2: Integrating P22 Mouse brain (Spatial CUT&TAG-RNA-seq, RNA+H3K27ac)
