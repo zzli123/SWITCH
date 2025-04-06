@@ -1,7 +1,7 @@
 # SWITCH: deep generative model for spatial multi-omics integration and cross-modal prediction
 
 ## Installation
-It will take ~10 mins
+The installation will take approximately 10 minutes.
 ```
 git clone https://github.com/zzli123/SWITCH.git
 cd SWITCH-main
