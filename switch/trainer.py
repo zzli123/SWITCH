@@ -322,14 +322,14 @@ class Trainer():
     def pretrain(
             self, data: List[torch.Tensor], graph_data: List[torch.Tensor], max_epochs: int = None, 
             mini_batch: bool = False, iteration: int = 1, dsc_k: int = None,
-            early_stop : bool = True, warmup: bool = False, log_step : int = 100,
+            early_stop : bool = False, warmup: bool = False, log_step : int = 100,
             early_stop_kwargs: dict={'gen_delta':2e-4, 'dsc_delta':2e-3, 'patience':250, 'verbose':False, 'step':50},
-            warmup_kwargs : dict= {'warmup_epochs':None, 'base_lr': None, 'max_lr':2e-3,'step_size':50, 'gamma':0.9}
+            warmup_kwargs : dict= {'warmup_epochs':None, 'base_lr': None, 'max_lr':2e-3,'step_size':100, 'gamma':0.9}
      
     ) -> Mapping[str, torch.Tensor]:
         
         if(early_stop):
-            early_stop_default = {'gen_delta':2e-4, 'dsc_delta':2e-3, 'patience':250, 'verbose':False, 'step':50}
+            early_stop_default = {'gen_delta':2e-4, 'dsc_delta':2e-3, 'patience':250, 'verbose':False, 'step':100}
             for key in early_stop_default.keys():
                 if not key in early_stop_kwargs:
                     early_stop_kwargs[key] = early_stop_default[key]
@@ -340,12 +340,12 @@ class Trainer():
                                                 step=early_stop_kwargs['step'])
         
         if(warmup):
-            warmup_default = {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':50, 'gamma':0.9}
+            warmup_default = {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':100, 'gamma':0.9}
             for key in warmup_default.keys():
                 if not key in warmup_kwargs:
                     warmup_kwargs[key] = warmup_default[key]
             warmup_kwargs["base_lr"] = warmup_kwargs["base_lr"] or self.lr
-            warmup_kwargs["warmup_epochs"] = warmup_kwargs["warmup_epochs"] or (0.5 * max_epochs)
+            warmup_kwargs["warmup_epochs"] = warmup_kwargs["warmup_epochs"] or (0.2 * max_epochs)
             self.vae_warmup = model.WarmUpScheduler(self.vae_optim, warmup_kwargs["warmup_epochs"],
                                                     warmup_kwargs["base_lr"], warmup_kwargs["max_lr"],
                                                     warmup_kwargs["step_size"], warmup_kwargs["gamma"])
@@ -456,9 +456,9 @@ class Trainer():
     def train(
             self, data: List[torch.Tensor], graph_data: List[torch.Tensor], max_epochs: int = None,
             mini_batch: bool =False, iteration: int=1, dsc_k: int = None, cycle_key: List=[],
-            early_stop : bool =True, train_ae : bool = False, log_step: int = 100, warmup: bool = False,
+            early_stop : bool =False, train_ae : bool = True, log_step: int = 100, warmup: bool = False,
             early_stop_kwargs: dict={'gen_delta':1e-4, 'dsc_delta':2e-3, 'patience':400, 'verbose':False, 'step':50},
-            warmup_kwargs : dict= {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':50, 'gamma':0.9}
+            warmup_kwargs : dict= {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':50, 'gamma':0.8}
             
     ) -> Mapping[str, torch.Tensor]:
         
@@ -476,12 +476,12 @@ class Trainer():
                                                 step=early_stop_kwargs['step'])
             
         if(warmup):
-            warmup_default = {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':50, 'gamma':0.9}
+            warmup_default = {'warmup_epochs':None, 'base_lr':None, 'max_lr':2e-3,'step_size':50, 'gamma':0.8}
             for key in warmup_default.keys():
                 if not key in warmup_kwargs:
                     warmup_kwargs[key] = warmup_default[key]
             warmup_kwargs["base_lr"] = warmup_kwargs["base_lr"] or self.lr
-            warmup_kwargs["warmup_epochs"] = warmup_kwargs["warmup_epochs"] or (0.4 * max_epochs)
+            warmup_kwargs["warmup_epochs"] = warmup_kwargs["warmup_epochs"] or (0.2 * max_epochs)
             self.vae_warmup = model.WarmUpScheduler(self.vae_optim, warmup_kwargs["warmup_epochs"],
                                                     warmup_kwargs["base_lr"], warmup_kwargs["max_lr"],
                                                     warmup_kwargs["step_size"], warmup_kwargs["gamma"])
@@ -614,33 +614,33 @@ class Trainer():
 
         # self.lam_align = self.lam_align * 0.5
 
-    def procrustes(self, A, B):
-        """
-        Find the best orthogonal matrix mapping using the Orthogonal Procrustes problem
-        https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
-        """
-        M = np.dot(A.T, B)
-        U, S, V_t = np.linalg.svd(M)
-        self.W = np.dot(U, V_t)
+    # def procrustes(self, A, B):
+    #     """
+    #     Find the best orthogonal matrix mapping using the Orthogonal Procrustes problem
+    #     https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
+    #     """
+    #     M = np.dot(A.T, B)
+    #     U, S, V_t = np.linalg.svd(M)
+    #     self.W = np.dot(U, V_t)
 
-    def findMNN(self, A, B, k=10, metric="euclidean"):
-        if(metric=="euclidean"):
-            dist_func = euclidean_distances
-        elif(metric=="cosine"):
-            dist_func = cosine_distances
-        else:
-            raise ValueError(f"Metric must be 'euclidean' or 'cosine'.")
-        distance_matrix = dist_func(A, B)
-        A_to_B = np.argmin(distance_matrix, axis=1)  
-        B_to_A = np.argsort(distance_matrix, axis=0)[:k, :]
-        mutual_pairs = []
-        for i, j in enumerate(A_to_B):
-            if i in B_to_A[:, j]:
-                mutual_pairs.append((i, j))
-        matched_A = A[[pair[0] for pair in mutual_pairs]]
-        matched_B = B[[pair[1] for pair in mutual_pairs]]
+    # def findMNN(self, A, B, k=10, metric="euclidean"):
+    #     if(metric=="euclidean"):
+    #         dist_func = euclidean_distances
+    #     elif(metric=="cosine"):
+    #         dist_func = cosine_distances
+    #     else:
+    #         raise ValueError(f"Metric must be 'euclidean' or 'cosine'.")
+    #     distance_matrix = dist_func(A, B)
+    #     A_to_B = np.argmin(distance_matrix, axis=1)  
+    #     B_to_A = np.argsort(distance_matrix, axis=0)[:k, :]
+    #     mutual_pairs = []
+    #     for i, j in enumerate(A_to_B):
+    #         if i in B_to_A[:, j]:
+    #             mutual_pairs.append((i, j))
+    #     matched_A = A[[pair[0] for pair in mutual_pairs]]
+    #     matched_B = B[[pair[1] for pair in mutual_pairs]]
 
-        return mutual_pairs, matched_A, matched_B
+    #     return mutual_pairs, matched_A, matched_B
 
     def save(
             self, path

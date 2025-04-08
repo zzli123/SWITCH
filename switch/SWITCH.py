@@ -31,7 +31,10 @@ DecoderDist = {"POIS" : PoisDataDecoder,
                "BER" : BerDataDecoder,
                "NB" : NBDataDecoder,
                "NORMAL" : NormalDataDecoder,
-               "MIXNB" : MixtureNBDecoder}
+               "ZINB": ZINBDataDecoder,
+            #    "MIXNB" : MixtureNBDecoder
+               }
+               
 
 class SWITCH():
     """
@@ -39,8 +42,8 @@ class SWITCH():
     """
     def __init__(
             self, adatas: Mapping[str, AnnData], vertices: List[str], latent_dim: int = 50, h_dim: int = 256,
-            h_depth_enc: int = 1, h_depth_dsc: int = None,  dropout: float = 0.2,  shared_batches: bool = False, 
-            conv_layer: str = "GAT", seed: int=0, normalize_methods: dict={}
+            h_depth_enc: int = 1, h_depth_dsc: int = None,  dropout: float = 0.1, dsc_dropout: float = None,
+            shared_batches: bool = False, conv_layer: str = "GAT", seed: int=0, normalize_methods: dict={}
     ) -> None:
         """
         Initialize an instance of the SWITCH class.
@@ -164,9 +167,10 @@ class SWITCH():
 
         h_depth_dsc = h_depth_dsc or h_depth_enc
         logger.debug(f"Set {h_depth_dsc} layers for the discriminator")
+        dsc_dropout = dsc_dropout or dropout
         du = Discriminator(
             latent_dim, len(self.modalities), n_batches=du_n_batches,
-            h_depth=h_depth_dsc , h_dim=h_dim, dropout=dropout
+            h_depth=h_depth_dsc , h_dim=h_dim, dropout=dsc_dropout
         )
 
         for key in idx.keys():
@@ -192,8 +196,9 @@ class SWITCH():
         self.TRAIN_DSC = 2.5
 
     def compile(
-            self, lam_kl: float = 1.0, lam_graph: float = 0.02, lam_adv: float = 0.02,
-            lam_iden: float = 1.0, lam_cycle: float = 0.8, lam_align: float = 0.01, lr: float = 2e-3, **kwargs
+            self, lam_kl: float = 1.0, lam_graph: float = 0.2, lam_adv: float = 0.02,
+            lam_iden: float = 1.0, lam_cycle: float = 1.0, lam_align: float = 0.1, lr: float = 2e-4,
+            **kwargs
     ) -> None:
         """
         Set hyperparameters for Model training.
@@ -587,7 +592,7 @@ class SWITCH():
         
         b = torch.as_tensor(b, device=self._net.device)
         
-        u, _ = self.encode_data(source_key, source_adata, library_size=True, sample=sample)        
+        u, _ = self.encode_data(source_key, source_adata, sample=sample, return_library_size=True)        
 
         l = torch.as_tensor(l, device=self._net.device)
 
