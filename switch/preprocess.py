@@ -14,8 +14,8 @@ import sklearn.neighbors
 import re
 from tqdm.auto import tqdm
 
-def Cal_Spatial_Net(adata, use_rep="spatial", rad_cutoff=None, k_cutoff=None, 
-                    model='Radius',  verbose=True, copy=False):
+def Cal_Spatial_Net(adata, use_rep: str="spatial", rad_cutoff: float=None, k_cutoff: int=None, 
+                    model: str='Radius',  verbose: bool=True, copy: bool=False):
     """
     Construct the spatial neighbor networks.
 
@@ -610,7 +610,28 @@ def check_graph(
         cov: str = "error", attr: str = "error",
         loop: str = "error", sym: str = "error"
 ) -> None:
-    
+    r"""
+    Check if a graph is a valid guidance graph
+
+    Parameters
+    ----------
+    graph
+        Graph to be checked
+    adatas
+        AnnData objects where graph nodes are variables
+    cov
+        Action to take if graph nodes does not cover all variables,
+        must be one of {"ignore", "warn", "error"}
+    attr
+        Action to take if graph edges does not contain required attributes,
+        must be one of {"ignore", "warn", "error"}
+    loop
+        Action to take if graph does not contain self-loops,
+        must be one of {"ignore", "warn", "error"}
+    sym
+        Action to take if graph is not symmetric,
+        must be one of {"ignore", "warn", "error"}
+    """
     passed = True
     if(verbose and cov != "ignore"):
         print(f"- INFO - Checking variable coverage...")

@@ -13,7 +13,41 @@ import torch.nn.functional as F
 from . import model
 
 class SWITCH_nn(torch.nn.Module):
+    """
+    SWITCH  model architecture for multi-modal data integration.
 
+    Parameters:
+    ----------
+    g2v : model.GraphEncoder
+        The graph encoder for feature graph encoding.
+
+    v2g : model.GraphDecoder
+        The graph decoder for feature graph decoding.
+
+    x2u : Mapping[str, model.DataEncoder]
+        A mapping of data encoders for different modalities.
+
+    u2x : Mapping[str, model.NBDataDecoder]
+        A mapping of data decoders for different modalities.
+
+    idx : Mapping[str, torch.Tensor]
+        A mapping of indices for the features of different modalities.
+
+    adj : Mapping[str, torch.Tensor]
+        A mapping of adjacency matrices for different modalities.
+
+    du : model.Discriminator
+        The discriminator used for distinguishing  different modalities.
+
+    prior : model.Prior
+        The prior distribution used in the model.
+
+    logger : logging.StreamHandler
+        The logger for logging output.
+
+    normalize_methods : dict
+        A dictionary of normalization methods for different modalities.
+    """
     def __init__(
             self, g2v: model.GraphEncoder, v2g: model.GraphDecoder,
             x2u: Mapping[str, model.DataEncoder],
@@ -53,15 +87,38 @@ class SWITCH_nn(torch.nn.Module):
 
     @property
     def device(self) -> torch.device:
+        """
+        Returns the device (CPU or GPU) on which the model is located.
 
+        Returns:
+        -------
+        torch.device
+            The device where the model is currently located.
+        """
         return self._device
 
     @device.setter
     def device(self, device: torch.device) -> None:
+        """
+        Sets the device (CPU or GPU) for the model.
+
+        Parameters:
+        ----------
+        device : torch.device
+            The device to which the model should be moved.
+        """
         self._device = device
         self.to(self._device)
     
     def autodevice(self) -> torch.device:
+        """
+        Automatically selects the available device (CPU or GPU).
+
+        Returns:
+        -------
+        torch.device
+            The selected device based on availability.
+        """
         used_device = -1
         gpu_available = torch.cuda.is_available()
         if(torch.cuda.is_available()):

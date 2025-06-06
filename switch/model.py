@@ -1,18 +1,13 @@
 import collections
-from abc import abstractmethod
 from typing import Optional, Tuple
 
 import torch
 import numpy as np
 import torch.distributions as D
 import torch.nn.functional as F
-from torch.autograd import Function
 from torch_geometric.nn import GCNConv
 from .gat_conv import GATConv
-from torch.optim.lr_scheduler import LambdaLR, StepLR
-from torch.distributions.utils import broadcast_all, lazy_property, logits_to_probs
-from torch.distributions import Distribution, Gamma, constraints
-from torch.distributions import Poisson as PoissonTorch
+from torch.optim.lr_scheduler import StepLR
 
 EPS = 1e-7
 
@@ -95,7 +90,32 @@ class GraphDecoder(torch.nn.Module):
         return D.Bernoulli(logits=logits)
 
 class DataEncoder(torch.nn.Module):
-    def __init__(self, in_features, out_features, conv, h_depth=2, h_dim=256, dropout=0.2, ):
+    """
+    DataEncoder class for encoding input features using different convolution types.
+
+    Parameters:
+    ----------
+    in_features : int
+        Number of input features.
+
+    out_features : int
+        Number of output features.
+
+    conv : str
+        Type of convolution layer ('GCN', 'GAT', or 'LIN').
+
+    h_depth : int, optional (default=2)
+        Number of hidden layers.
+
+    h_dim : int, optional (default=256)
+        Dimensionality of hidden layers.
+
+    dropout : float, optional (default=0.2)
+        Dropout rate to prevent overfitting.
+    """
+    def __init__(self, in_features: int, out_features: int, conv: str, h_depth: int=2,
+                 h_dim: int=256, dropout: float=0.2, 
+    ):
         super().__init__()
 
         assert conv in ["GCN","GAT","LIN"]
@@ -126,22 +146,93 @@ class DataEncoder(torch.nn.Module):
 
         self.TOTAL_COUNT = 1e4
 
-    def compute_l(self, x: torch.Tensor) -> torch.Tensor:
+    def compute_l(self, x: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Computes the library size for a matrix, which is the sum of each row.
+
+        Parameters:
+        ----------
+        x : torch.Tensor
+            The input matrix (e.g., single-cell matrix) for which the library size is computed.
+
+        Returns:
+        -------
+        torch.Tensor
+            The library size for each row of the input matrix.
+        """
         return x.sum(dim=1, keepdim=True)
 
     def normalize(
             self, x: torch.Tensor, l: torch.Tensor
     ) -> torch.Tensor:
+        """
+        Normalizes the input matrix using the computed library size.
+
+        Parameters:
+        ----------
+        x : torch.Tensor
+            The input matrix to be normalized.
+
+        l : torch.Tensor
+            The computed library size for each row of the matrix.
+
+        Returns:
+        -------
+        torch.Tensor
+            The normalized matrix.
+        """
         return (x * (self.TOTAL_COUNT / l)).log1p()
     
-    def clr_normalize(self, x: torch.Tensor):
+    def clr_normalize(self, x: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Performs CLR normalization for protein data.
+
+        Parameters:
+        ----------
+        x : torch.Tensor
+            The input matrix to be CLR normalized.
+
+        Returns:
+        -------
+        torch.Tensor
+            The CLR normalized matrix.
+        """
         l = torch.log1p(x).sum(dim=1, keepdim=True)
         exp = torch.exp(l / x.size(1)) + EPS
         clr_x = torch.log1p(x / exp.view(-1, 1))
 
         return clr_x, x.sum(dim=1, keepdim=True)
     
-    def forward(self, x, edge_index, minibatch=False, batch_size=None, normalize="log"):
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, minibatch: bool=False, normalize: str="log",
+                return_attention_weights: bool=False
+    ):
+        """
+        Forward pass of the encoder.
+
+        Parameters:
+        ----------
+        x : torch.Tensor
+            The input matrix.
+
+        edge_index : torch.Tensor
+            The graph edges, required when convolution type is 'GCN' or 'GAT'.
+
+        minibatch : bool, optional (default=False)
+            Whether to perform minibatch convolution.
+
+        normalize : str, optional (default="log")
+            The type of normalization to apply to the input matrix. Can be either "log" or "clr".
+        
+        return_attention_weights: bool, optional (default=False)
+            Whether to return attention weights of data.
+            
+        Returns:
+        -------
+        torch.Tensor
+            The output after applying the forward pass.
+        """
         
         if(normalize=="clr"):# for protein
             ptr, l = self.clr_normalize(x)
@@ -150,7 +241,9 @@ class DataEncoder(torch.nn.Module):
                 ptr = self.normalize(x, l)
         else:
             raise ValueError("Invalid normalize method")
-                
+
+        # print(np.isnan(ptr.cpu().numpy()).any())
+
         if(minibatch):
             if(len(edge_index)!=len(self.conv_layers)):
                 raise ValueError(f"Length of sample size must be equal to `h_deepth`.")
@@ -163,7 +256,12 @@ class DataEncoder(torch.nn.Module):
                 ptr = self.dropout_layers[i](ptr) 
         else:
             for layer in range(0, self.h_depth):
-                if(self.conv in ["GAT","GCN"]):
+                if(self.conv == "GAT"):
+                    if(return_attention_weights):
+                        ptr, attn_weights = self.conv_layers[layer](ptr, edge_index, return_attention_weights=True)
+                    else:
+                        ptr = self.conv_layers[layer](ptr, edge_index)
+                elif(self.conv == "GCN"):
                     ptr = self.conv_layers[layer](ptr, edge_index)
                 else:
                     ptr = self.conv_layers[layer](ptr)
@@ -171,17 +269,26 @@ class DataEncoder(torch.nn.Module):
                 ptr = self.act_layers[layer](ptr)
                 ptr = self.dropout_layers[layer](ptr)
         
-        # print(torch.any(torch.isnan(ptr)))
-        
-
         loc = self.loc(ptr, )
         std = F.softplus(self.std_lin(ptr, )) + EPS
-        if(batch_size!=None):
-            return D.Normal(loc, std), l[:batch_size]
-        else:
-            return D.Normal(loc, std), l
+
+        if(return_attention_weights and self.conv=="GAT"):
+            return D.Normal(loc, std), l, attn_weights
+        
+        return D.Normal(loc, std), l
 
 class NBDataDecoder(torch.nn.Module):
+    """
+    Decoder class that returns a negative binomial distribution.
+
+    Parameters:
+    ----------
+    n_features : int
+        The number of output features of the decoder.
+
+    n_batches : int, optional (default=1)
+        The number of batches in the data.
+    """
     def __init__(self, n_features, n_batches=1,):
         super().__init__()
         
@@ -189,7 +296,30 @@ class NBDataDecoder(torch.nn.Module):
         self.bias = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
         self.log_theta = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
 
-    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor, edge_index: torch.Tensor = None):
+    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor
+    ):
+        """
+        Forward pass of the decoder.
+
+        Parameters:
+        ----------
+        u : torch.Tensor
+            The data embedding.
+
+        v : torch.Tensor
+            The feature embedding.
+
+        b : torch.Tensor
+            A vector representing the batch the data belongs to.
+
+        l : torch.Tensor
+            The library size of the data.
+
+        Returns:
+        -------
+        torch.Tensor
+          The negative binomial distribution.
+        """
 
         scale = F.softplus(self.scale_lin[b])
         logit_mu = scale * (u @ v.t()) + self.bias[b]
@@ -204,16 +334,49 @@ class NBDataDecoder(torch.nn.Module):
         return (feature_dist, adj_rec)
 
 class NormalDataDecoder(torch.nn.Module):
+    """
+    Decoder class that returns a normal distribution.
 
-    def __init__(self, out_features: int, n_batches: int = 1) -> None:
+    Parameters:
+    ----------
+    n_features : int
+        The number of output features of the decoder.
+
+    n_batches : int, optional (default=1)
+        The number of batches in the data.
+    """
+    def __init__(self, out_features: int, n_batches: int = 1
+    ) -> None:
         super().__init__()
         self.scale_lin = torch.nn.Parameter(torch.zeros(n_batches, out_features))
         self.bias = torch.nn.Parameter(torch.zeros(n_batches, out_features))
         self.std_lin = torch.nn.Parameter(torch.zeros(n_batches, out_features))
 
     def forward(
-            self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: Optional[torch.Tensor], edge_index: torch.Tensor = None
+            self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: Optional[torch.Tensor],
     ) -> D.Normal:
+        """
+        Forward pass of the decoder.
+
+        Parameters:
+        ----------
+        u : torch.Tensor
+            The data embedding.
+
+        v : torch.Tensor
+            The feature embedding.
+
+        b : torch.Tensor
+            A vector representing the batch the data belongs to.
+
+        l : torch.Tensor
+            The library size of the data.
+
+        Returns:
+        -------
+        torch.Tensor
+          The normal distribution.
+        """
         scale = F.softplus(self.scale_lin[b])
         loc = scale * (u @ v.t()) + self.bias[b]
         std = F.softplus(self.std_lin[b]) + EPS
@@ -222,13 +385,47 @@ class NormalDataDecoder(torch.nn.Module):
         return (D.Normal(loc, std), adj_rec)
 
 class BerDataDecoder(torch.nn.Module):
+    """
+    Decoder class that returns a bernoulli distribution.
+
+    Parameters:
+    ----------
+    n_features : int
+        The number of output features of the decoder.
+
+    n_batches : int, optional (default=1)
+        The number of batches in the data.
+    """
     def __init__(self, n_features, n_batches=1):
         super().__init__()
         
         self.scale_lin = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
         self.bias = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
 
-    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor, edge_index: torch.Tensor = None):
+    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor
+    ) -> D.Bernoulli:
+        """
+        Forward pass of the decoder.
+
+        Parameters:
+        ----------
+        u : torch.Tensor
+            The data embedding.
+
+        v : torch.Tensor
+            The feature embedding.
+
+        b : torch.Tensor
+            A vector representing the batch the data belongs to.
+
+        l : torch.Tensor
+            The library size of the data.
+
+        Returns:
+        -------
+        torch.Tensor
+          The bernoulli distribution.
+        """
 
         scale = F.softplus(self.scale_lin[b])
         logits = scale * (u @ v.t())  + self.bias[b]
@@ -238,14 +435,47 @@ class BerDataDecoder(torch.nn.Module):
         return (D.Bernoulli(logits = logits), adj_rec)
 
 class PoisDataDecoder(torch.nn.Module):
-    def __init__(self, n_features, n_batches=1, h_dim=50):
+    """
+    Decoder class that returns a poisson distribution.
+
+    Parameters:
+    ----------
+    n_features : int
+        The number of output features of the decoder.
+
+    n_batches : int, optional (default=1)
+        The number of batches in the data.
+    """
+    def __init__(self, n_features, n_batches=1,):
         super().__init__()
         
         self.scale_lin = torch.nn.Parameter(torch.zeros(n_batches, n_features))
         self.bias = torch.nn.Parameter(torch.zeros(n_batches, n_features))
 
-    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor, edge_index: torch.Tensor = None):
+    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor,
+    ):
+        """
+        Forward pass of the decoder.
 
+        Parameters:
+        ----------
+        u : torch.Tensor
+            The data embedding.
+
+        v : torch.Tensor
+            The feature embedding.
+
+        b : torch.Tensor
+            A vector representing the batch the data belongs to.
+
+        l : torch.Tensor
+            The library size of the data.
+
+        Returns:
+        -------
+        torch.Tensor
+          The poisson distribution.
+        """
         scale = F.softplus(self.scale_lin[b])
         rate = scale * (u @ v.t()) + self.bias[b]
         rate = F.softmax(rate, dim=1)  * l
@@ -258,7 +488,20 @@ class PoisDataDecoder(torch.nn.Module):
         return (feature_dist, adj_rec)
 
 class ZINB(D.NegativeBinomial):
+    """
+    Zero-Inflated Negative Binomial (ZINB) distribution class.
 
+    Parameters:
+    ----------
+    zi_logits : torch.Tensor
+        The logits for the zero-inflation component.
+
+    total_count : torch.Tensor
+        The total count (or size) parameter for the negative binomial distribution.
+
+    logits : torch.Tensor, optional
+        The logits for the probability of success in the negative binomial distribution (default is None).
+    """
     def __init__(
             self, zi_logits: torch.Tensor,
             total_count: torch.Tensor, logits: torch.Tensor = None
@@ -267,6 +510,19 @@ class ZINB(D.NegativeBinomial):
         self.zi_logits = zi_logits
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the log probability of the given value under the Zero-Inflated Negative Binomial (ZINB) distribution.
+
+        Parameters:
+        ----------
+        value : torch.Tensor
+            The value for which the log probability is computed.
+
+        Returns:
+        -------
+        torch.Tensor
+            The log probability of the given value under the ZINB distribution.
+        """
         raw_log_prob = super().log_prob(value)
         zi_log_prob = torch.empty_like(raw_log_prob)
         z_mask = value.abs() < EPS
@@ -278,12 +534,44 @@ class ZINB(D.NegativeBinomial):
         return zi_log_prob
 
 class ZINBDataDecoder(NBDataDecoder):
+    """
+    Decoder class that returns a  zero-inflated negative binomial distribution.
 
+    Parameters:
+    ----------
+    n_features : int
+        The number of output features of the decoder.
+
+    n_batches : int, optional (default=1)
+        The number of batches in the data.
+    """
     def __init__(self, out_features: int, n_batches: int = 1) -> None:
         super().__init__(out_features, n_batches=n_batches)
         self.zi_logits = torch.nn.Parameter(torch.zeros(n_batches, out_features))
 
-    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor, edge_index=None):
+    def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor,):
+        """
+        Forward pass of the decoder.
+
+        Parameters:
+        ----------
+        u : torch.Tensor
+            The data embedding.
+
+        v : torch.Tensor
+            The feature embedding.
+
+        b : torch.Tensor
+            A vector representing the batch the data belongs to.
+
+        l : torch.Tensor
+            The library size of the data.
+
+        Returns:
+        -------
+        torch.Tensor
+          The ZINB distribution.
+        """
         scale = F.softplus(self.scale_lin[b])
         logit_mu = scale * (u @ v.t()) + self.bias[b]
         mu = F.softmax(logit_mu, dim=1) * l
@@ -296,214 +584,6 @@ class ZINBDataDecoder(NBDataDecoder):
         adj_rec = None
 
         return (feature_dist, adj_rec)
-
-# class NegativeBinomialMixture(Distribution):
-
-#     def __init__(
-#         self,
-#         mu1: torch.Tensor,
-#         mu2: torch.Tensor,
-#         theta1: torch.Tensor,
-#         mixture_logits: torch.Tensor,
-#         validate_args: bool = False,
-#     ):
-#         (
-#             self.mu1,
-#             self.theta1,
-#             self.mu2,
-#             self.mixture_logits,
-#         ) = broadcast_all(mu1, theta1, mu2, mixture_logits)
-#         self.on_mps = (
-#             mu1.device.type == "mps"
-#         )  # TODO: This is used until torch will solve the MPS issues
-#         super().__init__(validate_args=validate_args)
-
-#     @property
-#     def mean(self) -> torch.Tensor:
-#         pi = self.mixture_probs
-#         return pi * self.mu1 + (1 - pi) * self.mu2
-
-#     @lazy_property
-#     def mixture_probs(self) -> torch.Tensor:
-#         return logits_to_probs(self.mixture_logits, is_binary=True)
-
-#     def _gamma(self, theta: torch.Tensor, mu: torch.Tensor, on_mps: bool = False) -> Gamma:
-#         concentration = theta
-#         rate = theta / mu
-#         # Important remark: Gamma is parametrized by the rate = 1/scale!
-#         gamma_d = (
-#             Gamma(concentration=concentration.to("cpu"), rate=rate.to("cpu"))
-#             if on_mps  # TODO: NEED TORCH MPS FIX for 'aten::_standard_gamma'
-#             else Gamma(concentration=concentration, rate=rate)
-#         )
-#         return gamma_d
-    
-#     def torch_lgamma_mps(self, x: torch.Tensor) -> torch.Tensor:
-#         """Used in mac Mx devices while broadcasting a tensor
-
-#         Parameters
-#         ----------
-#         x
-#             Data
-
-#         Returns
-#         -------
-#         lgamma tensor that perform on a copied version of the tensor
-#         """
-#         return torch.lgamma(x.contiguous())
-
-#     @torch.inference_mode()
-#     def sample(
-#         self,
-#         sample_shape: torch.Size = None,
-#     ) -> torch.Tensor:
-#         """Sample from the distribution."""
-#         sample_shape = sample_shape or torch.Size()
-#         pi = self.mixture_probs
-#         mixing_sample = D.Bernoulli(pi).sample()
-#         mu = self.mu1 * mixing_sample + self.mu2 * (1 - mixing_sample)
-#         if self.theta2 is None:
-#             theta = self.theta1
-#         else:
-#             theta = self.theta1 * mixing_sample + self.theta2 * (1 - mixing_sample)
-#         gamma_d = self._gamma(theta, mu, self.on_mps)  # TODO: TORCH MPS FIX - DONE ON CPU CURRENTLY
-#         p_means = gamma_d.sample(sample_shape)
-
-#         # Clamping as distributions objects can have buggy behaviors when
-#         # their parameters are too high
-#         l_train = torch.clamp(p_means, max=1e8)
-#         counts = PoissonTorch(l_train).sample()  # Shape : (n_samples, n_cells_batch, n_features)
-#         return counts
-
-#     def log_mixture_nb(
-#         self,
-#         x: torch.Tensor,
-#         mu_1: torch.Tensor,
-#         mu_2: torch.Tensor,
-#         theta_1: torch.Tensor,
-#         pi_logits: torch.Tensor,
-#         eps: float = 1e-8,
-#         log_fn: callable = torch.log,
-#         lgamma_fn: callable = torch.lgamma,
-#     ) -> torch.Tensor:
-#         """Log likelihood (scalar) of a minibatch according to a mixture nb model.
-
-#         pi_logits is the probability (logits) to be in the first component.
-#         For totalVI, the first component should be background.
-
-#         Parameters
-#         ----------
-#         x
-#             Observed data
-#         mu_1
-#             Mean of the first negative binomial component (has to be positive support) (shape:
-#             minibatch x features)
-#         mu_2
-#             Mean of the second negative binomial (has to be positive support) (shape: minibatch x
-#             features)
-#         theta_1
-#             First inverse dispersion parameter (has to be positive support) (shape: minibatch x
-#             features)
-#         theta_2
-#             Second inverse dispersion parameter (has to be positive support) (shape: minibatch x
-#             features). If None, assume one shared inverse dispersion parameter.
-#         pi_logits
-#             Probability of belonging to mixture component 1 (logits scale)
-#         eps
-#             Numerical stability constant
-#         log_fn
-#             log function
-#         lgamma_fn
-#             log gamma function
-#         """
-#         log = log_fn
-#         lgamma = lgamma_fn
-#         theta = theta_1
-#         if theta.ndimension() == 1:
-#             theta = theta.view(1, theta.size(0))  # In this case, we reshape theta for broadcasting
-
-#         log_theta_mu_1_eps = log(theta + mu_1 + eps)
-#         log_theta_mu_2_eps = log(theta + mu_2 + eps)
-#         lgamma_x_theta = lgamma(x + theta)
-#         lgamma_theta = lgamma(theta)
-#         lgamma_x_plus_1 = lgamma(x + 1)
-
-#         log_nb_1 = (
-#             theta * (log(theta + eps) - log_theta_mu_1_eps)
-#             + x * (log(mu_1 + eps) - log_theta_mu_1_eps)
-#             + lgamma_x_theta
-#             - lgamma_theta
-#             - lgamma_x_plus_1
-#         )
-#         log_nb_2 = (
-#             theta * (log(theta + eps) - log_theta_mu_2_eps)
-#             + x * (log(mu_2 + eps) - log_theta_mu_2_eps)
-#             + lgamma_x_theta
-#             - lgamma_theta
-#             - lgamma_x_plus_1
-#         )
-
-#         logsumexp = torch.logsumexp(torch.stack((log_nb_1, log_nb_2 - pi_logits)), dim=0)
-#         softplus_pi = F.softplus(-pi_logits)
-
-#         log_mixture_nb_res = logsumexp - softplus_pi
-
-#         return log_mixture_nb_res
-
-#     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
-#         """Log probability."""
-
-#         lgamma_fn = self.torch_lgamma_mps if self.on_mps else torch.lgamma  # TODO: TORCH MPS FIX
-#         return self.log_mixture_nb(
-#             value,
-#             self.mu1,
-#             self.mu2,
-#             self.theta1,
-#             self.mixture_logits,
-#             eps=1e-08,
-#             lgamma_fn=lgamma_fn,
-#         )
-
-#     def __repr__(self) -> str:
-#         param_names = [k for k, _ in self.arg_constraints.items() if k in self.__dict__]
-#         args_string = ", ".join(
-#             [
-#                 f"{p}: "
-#                 f"{self.__dict__[p] if self.__dict__[p].numel() == 1 else self.__dict__[p].size()}"
-#                 for p in param_names
-#                 if self.__dict__[p] is not None
-#             ]
-#         )
-#         return self.__class__.__name__ + "(" + args_string + ")"
-
-# class MixtureNBDecoder(torch.nn.Module):
-#     def __init__(self, n_features, n_batches=1,):
-#         super().__init__()
-        
-#         self.back_scale_lin = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
-#         self.fore_alpha = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
-#         # self.bias = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
-#         self.log_theta = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
-#         self.mix_prob = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.zeros(n_batches, n_features)))
-    
-#     def forward(self, u: torch.Tensor, v: torch.Tensor, b: torch.Tensor, l: torch.Tensor, edge_index: torch.Tensor = None):
-#         x = u @ v.t()
-#         back_scale = F.softplus(self.back_scale_lin[b])
-#         back_logit_mu = back_scale * x # + self.bias[b]
-#         back_mu = F.softmax(back_logit_mu, dim=1)
-#         alpha = F.softplus(self.fore_alpha[b])
-#         alpha = F.relu(alpha * x) + 1 + EPS
-#         log_theta = self.log_theta[b]
-#         mix_prob = F.sigmoid(self.mix_prob * x)
-#         feature_dist = NegativeBinomialMixture(
-#            mu1 = back_mu,
-#            mu2 = alpha * back_mu,
-#            theta1 = log_theta.exp(),
-#            mixture_logits = mix_prob
-#         )
-#         adj_rec = None
-
-#         return (feature_dist, adj_rec)
 
 class Discriminator(torch.nn.Sequential):
 
@@ -574,7 +654,30 @@ class Prior(torch.nn.Module):
         return D.Normal(self.loc, self.std)
 
 class EarlyStopping:
-    def __init__(self, patience=200, gen_delta=2e-4, dsc_delta=1e-3, verbose=False, step=50):
+    """
+    Early stopping mechanism for training, designed to stop the training process if the model performance 
+    (losses) does not improve for a certain number of steps.
+
+    Parameters:
+    ----------
+    patience : int, optional (default=200)
+        The number of steps with no improvement after which training will be stopped.
+
+    gen_delta : float, optional (default=2e-4)
+        The threshold for considering the generator loss as unchanged.
+
+    dsc_delta : float, optional (default=1e-3)
+        The threshold for considering the discriminator loss as unchanged.
+
+    verbose : bool, optional (default=False)
+        If True, prints progress messages when the training is stopped.
+
+    step : int, optional (default=50)
+        The number of steps after which the average loss is calculated.
+    """
+    def __init__(self, patience: int=200, gen_delta: float=2e-4, dsc_delta: float=1e-3,
+                 verbose: bool=False, step: int=50
+    ):
     
         self.patience = patience
         self.gen_loss_history = []
@@ -588,7 +691,23 @@ class EarlyStopping:
         self.early_stop = False
         self.step = step
 
-    def __call__(self, val_loss, dsc_loss):
+    def __call__(self, val_loss: torch.Tensor, dsc_loss: torch.Tensor):
+        """
+        Checks if early stopping criteria are met based on the validation loss and discriminator loss.
+
+        Parameters:
+        ----------
+        val_loss : torch.Tensor
+            The current validation loss.
+
+        dsc_loss : torch.Tensor
+            The current discriminator loss.
+
+        Returns:
+        -------
+        bool
+            True if early stopping criteria are met, False otherwise.
+        """
 
         self.gen_loss_history.append(val_loss)
         self.counter += 1
@@ -612,7 +731,32 @@ class EarlyStopping:
                     print("No improvement; continuing training...")
 
 class WarmUpScheduler():
-    def __init__(self, optimizer, warmup_epochs=500, base_lr=2e-4, target_lr=2e-3, step_size=50, gamma=0.9):
+    """
+    Learning rate scheduler for warm-up followed by learning rate decay.
+
+    Parameters:
+    ----------
+    optimizer : torch.optim.Optimizer
+        The optimizer for which the learning rate scheduler will be applied.
+
+    warmup_epochs : int, optional (default=500)
+        The number of epochs over which the learning rate will be warmed up.
+
+    base_lr : float, optional (default=2e-4)
+        The initial (lowest) learning rate before warm-up starts.
+
+    target_lr : float, optional (default=2e-3)
+        The target learning rate at the end of the warm-up period.
+
+    step_size : int, optional (default=50)
+        The number of steps (or epochs) after which the learning rate will be adjusted.
+
+    gamma : float, optional (default=0.9)
+        The learning rate decay factor after warm-up.
+    """
+    def __init__(self, optimizer, warmup_epochs: int=500, base_lr: float=2e-4,
+                 target_lr: float=2e-3, step_size: int=50, gamma: float=0.9):
+        
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
         self.base_lr = base_lr
@@ -623,11 +767,27 @@ class WarmUpScheduler():
 
         self.decay_scheduler = StepLR(self.optimizer, step_size=self.step_size, gamma=self.gamma)
 
-    def set_lr(self, lr):
+    def set_lr(self, lr: float):
+        """
+        Sets the learning rate for the optimizer.
+
+        Parameters:
+        ----------
+        lr : float
+            The learning rate to be set.
+        """
         for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
 
-    def step(self, epoch):
+    def step(self, epoch: int):
+        """
+        Updates the learning rate based on the current epoch.
+
+        Parameters:
+        ----------
+        epoch : int
+            The current epoch number.
+        """
         if epoch < self.warmup_epochs:
             lr = self.base_lr + (self.target_lr - self.base_lr) * (epoch / self.warmup_epochs)
             self.set_lr(lr)
@@ -640,4 +800,12 @@ class WarmUpScheduler():
                 self.flag = True
 
     def get_lr(self):
+        """
+        Returns the current learning rate.
+
+        Returns:
+        -------
+        float
+            The current learning rate.
+        """
         return self.optimizer.param_groups[0]['lr']

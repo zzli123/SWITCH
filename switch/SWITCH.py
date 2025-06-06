@@ -20,9 +20,9 @@ from .preprocess import check_graph
 
 
 logger = logging.getLogger('logger')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-handler.setLevel(logging.DEBUG)
+handler.setLevel(logging.INFO)
 formatter = logging.Formatter('- %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -32,50 +32,63 @@ DecoderDist = {"POIS" : PoisDataDecoder,
                "NB" : NBDataDecoder,
                "NORMAL" : NormalDataDecoder,
                "ZINB": ZINBDataDecoder,
-            #    "MIXNB" : MixtureNBDecoder
                }
                
 
 class SWITCH():
     """
-    SWITCH class for spatial multi-omics integration.
+    SWITCH model for spatial multi-modal data integration.
+
+    Parameters:
+    ----------
+    adatas : Mapping[str, AnnData]
+        A dictionary of AnnData objects that need to be integrated.
+
+    vertices : List[str]
+        The vertices (nodes) of the feature graph.
+
+    latent_dim : int, optional (default=50)
+        The dimensionality of the latent space.
+
+    h_dim : int, optional (default=256)
+        The dimensionality of the hidden layers.
+
+    h_depth_enc : int, optional (default=1)
+        The number of hidden layers in the encoder.
+
+    h_depth_dsc : int, optional (default=None)
+        The number of hidden layers in the discriminator.
+
+    dropout : float, optional (default=0.1)
+        The dropout rate.
+
+    dsc_dropout : float, optional (default=None)
+        The dropout rate for the discriminator.
+
+    shared_batches : bool, optional (default=False)
+        Whether to share batches across different modalities.
+
+    conv_layer : str, optional (default="GAT")
+        The type of convolution used in the encoder. Can be one of 'GCN', 'GAT', or 'LIN'.
+
+    seed : int, optional (default=0)
+        The random seed for reproducibility.
+
+    normalize_methods : dict, optional (default={})
+        A dictionary of normalization methods for different modalities.
+        ** CAUTION **, Not implemented.
     """
     def __init__(
-            self, adatas: Mapping[str, AnnData], vertices: List[str], latent_dim: int = 50, h_dim: int = 256,
-            h_depth_enc: int = 1, h_depth_dsc: int = None,  dropout: float = 0.1, dsc_dropout: float = None,
-            shared_batches: bool = False, conv_layer: str = "GAT", seed: int=0, normalize_methods: dict={}
+            self, adatas: Mapping[str, AnnData], vertices: List[str], 
+            latent_dim: int = 50,
+            h_dim: int = 256,
+            h_depth_enc: int = 1,
+            h_depth_dsc: int = None,
+            dropout: float = 0.1,
+            conv_layer: str = "GAT",
+            seed: int=0,
+            normalize_methods: dict={}
     ) -> None:
-        """
-        Initialize an instance of the SWITCH class.
-
-        Parameters
-        ----------
-        adatas
-            A mapping of modality name identifiers to AnnData objects.
-        vertices
-            List of vertices defining the nodes in the graph network.
-        latent_dim
-            Dimension of the latent space for feature representation compression.
-        h_dim
-            Dimension of the hidden layers.
-        h_depth_enc
-            Depth of the data encoder.
-        h_depth_dsc
-            Depth of the discriminator.
-        dropout
-            Dropout rate to prevent model overfitting.
-        shared_batches
-            Whether to share batches across processes.
-        conv_layer
-            Type of convolution layer to use, must be one of {'GAT','GCN','LIN'}. Default is "GAT" (Graph Attention Network).
-        seed
-            Random seed for reproducibility.
-        normalize_methods
-            Dictionary of normalization methods defining specific data preprocessing and normalization techniques.
-            ** CAUTION **, Not implemented.
-
-        """
-        
         logger.info(f"Set random seed to {seed}")
 
         seed_everything(seed)
@@ -154,23 +167,12 @@ class SWITCH():
                 )
             logger.debug(f"Use {prob_model} distribution for the '{k}' dataset.")
             self.modalities[k] = data_config
-        
-        if shared_batches:
-            all_batches = [modality["batches"] for modality in self.modalities.values()]
-            ref_batch = all_batches[0]
-            for batches in all_batches:
-                if not np.array_equal(batches, ref_batch):
-                    raise RuntimeError("Batches must match when using `shared_batches`!")
-            du_n_batches = ref_batch.size
-        else:
-            du_n_batches = 0
 
         h_depth_dsc = h_depth_dsc or h_depth_enc
         logger.debug(f"Set {h_depth_dsc} layers for the discriminator")
-        dsc_dropout = dsc_dropout or dropout
         du = Discriminator(
-            latent_dim, len(self.modalities), n_batches=du_n_batches,
-            h_depth=h_depth_dsc , h_dim=h_dim, dropout=dsc_dropout
+            latent_dim, len(self.modalities), n_batches=0,
+            h_depth=h_depth_dsc , h_dim=h_dim, dropout=dropout
         )
 
         for key in idx.keys():
@@ -188,40 +190,45 @@ class SWITCH():
 
         self._trainer = None
 
-        self.PRETRAIN_MIN_EPOCH = 2500
-        self.PRETRAIN_MAX_EPOCH = 5000
-        self.TRAIN_MIN_EPOCH = 400
-        self.TRAIN_MAX_EPOCH = 5000
-        self.PRETRAIN_DSC = 1
-        self.TRAIN_DSC = 2.5
-
     def compile(
-            self, lam_kl: float = 1.0, lam_graph: float = 0.2, lam_adv: float = 0.02,
-            lam_iden: float = 1.0, lam_cycle: float = 1.0, lam_align: float = 0.1, lr: float = 2e-4,
+            self, 
+            lam_data: float = 1.0,
+            lam_graph: float = 0.2,
+            lam_adv: float = 0.02,
+            lam_cycle: float = 1.0,
+            lam_align: float = 0.1,
+            lam_kl: float = 1.0,            
+            lr: float = 2e-4,
             **kwargs
     ) -> None:
         """
-        Set hyperparameters for Model training.
+        Sets the hyperparameters for the SWITCH model.
 
-        Parameters
+        Parameters:
         ----------
-        lam_kl
-            KL weight
-        lam_graph
-            Graph weight
-        lam_iden
-            Data reconstruction weight
-        lam_adv
-            Adversarial alignment weight
-        lam_cycle
-            Cycle mapping weight
-        lam_align
-            Raw data and pseudo pairing alignment weight
-        lr
-            Learning rate
-        **kwargs
-            Additional keyword arguments passed to trainer
+        lam_data : float, optional (default=1.0)
+            The weight for the data reconstruction loss.
 
+        lam_graph : float, optional (default=0.2)
+            The weight for the graph reconstruction loss.
+
+        lam_adv : float, optional (default=0.02)
+            The weight for the adversarial loss.
+
+        lam_cycle : float, optional (default=1.0)
+            The weight for the cycle mapping loss.
+
+        lam_align : float, optional (default=0.1)
+            The weight for the pseudo-pair alignment loss.
+
+        lam_kl : float, optional (default=1.0)
+            The weight for the KL divergence loss.
+
+        lr : float, optional (default=2e-4)
+            The learning rate.
+
+        **kwargs
+            Additional parameters to be passed to the trainer.
         """
 
         if self._trainer:
@@ -229,37 +236,51 @@ class SWITCH():
                 "Overwritten previous trainer!"
             )
         self._trainer = Trainer(
-            self._net, lam_kl=lam_kl,lam_graph=lam_graph, lam_adv=lam_adv, lam_iden=lam_iden, 
+            self._net, lam_kl=lam_kl,lam_graph=lam_graph, lam_adv=lam_adv, lam_data=lam_data, 
             lam_cycle=lam_cycle, lam_align=lam_align, optim="RMSprop", lr=lr, **kwargs
         )
 
     def pretrain(
-            self, adatas: Mapping[str, AnnData], graph: nx.Graph, max_epochs: int = None,
-            mini_batch: bool=False, iteration: int =1, dsc_k: int = None, **kwargs
+            self,
+            adatas: Mapping[str, AnnData],
+            graph: nx.Graph,
+            max_epochs: int=None,
+            mini_batch: bool=False,
+            iteration: int=1,
+            dsc_k: int=1,
+            warmup: bool=False,
+            **kwargs
     ) -> None:
         """
-        Pretrain model (without cycle_loss and align_loss).
+        Pre-trains the SWITCH model without cycle mapping and pseudo-pair alignment losses.
 
-        Parameters
+        Parameters:
         ----------
-        adatas
-            Datasets (indexed by modality name).
-        graph
-            Guidance graph.
-        max_epochs
-            Max epochs for model training.
-        val_split
-            Validation split
-        mini_batch
-           Whether use mini batch training.
-        iteration
-            Iteration for mini-batch training.
-        dsc_k
-            Number of times the discriminator is trained relative to the generator.
+        adatas : Mapping[str, AnnData]
+            A dictionary of AnnData objects to be integrated.
+
+        graph : nx.Graph
+            A graph representing the feature structure of different modalities.
+
+        max_epochs : int, optional
+            The maximum number of training epochs.
+
+        mini_batch : bool, optional (default=False)
+            Whether to use mini-batch training.
+
+        iteration : int, optional (default=1)
+            The number of iterations per mini-batch.
+
+        dsc_k : int, optional
+            The number of discriminator updates per VAE update.
+
+        warmup : bool, optional (default=False)
+            Whether to perform warmup during pretraining.
+
         **kwargs
-            Additional keyword arguments passed to trainer.
-            
+            Additional parameters to be passed to the training function.
         """
+
         data_configs = []
         adatas_ordered = []
         self._net.adj_weight = dict()
@@ -277,50 +298,62 @@ class SWITCH():
         )
         graph_data = extract_graph(graph, self.vertices)
 
-        data_size = max([adata.shape[0] for adata in adatas.values()])
-        dsc_k = dsc_k or ceil(self.PRETRAIN_DSC / self._trainer.TTUR)
-        max_epochs = max_epochs or min(ceil(self.PRETRAIN_MIN_EPOCH + 8e-2*pow(1/self._trainer.lr, 0.4)*pow(data_size,0.7)),
-                                       self.PRETRAIN_MAX_EPOCH)
+        data_size = sum([adata.shape[0] for adata in adatas.values()])
+        if(max_epochs is None):
+            if(warmup):
+                max_epochs = min(1500, 1000 + int(data_size / 1e4) * 500)
+            else:
+                max_epochs = min(3000, 2000 + int(data_size / 1e4) * 1000)
         self._net.logger.debug(f"Set `dsc_k` = {dsc_k} for pretrain.")
         self._net.logger.debug(f"Set `max_epochs` = {max_epochs} for pretrain.")
 
-
         self._trainer.pretrain(data, graph_data, max_epochs=max_epochs, mini_batch=mini_batch,iteration=iteration, 
-                               dsc_k=dsc_k, **kwargs)
+                               dsc_k=dsc_k, warmup=warmup, **kwargs)
         self._net.logger.info("Model pretrain done.")
 
     def train(
-        self, adatas: Mapping[str, AnnData], graph: nx.Graph, max_epochs: int = None,
-        mini_batch: bool=False, iteration: int =1, dsc_k: int = None, 
-        cycle_key = "all", fine_tune=True, **kwargs
+        self,
+        adatas: Mapping[str, AnnData],
+        graph: nx.Graph,
+        max_epochs: int = None,
+        mini_batch: bool=False,
+        iteration: int =1,
+        dsc_k: int = None, 
+        cycle_key = "all",
+        warmup: bool=False,
+        **kwargs
     )-> None:
         """
-        Train model.
+        Trains the SWITCH model, including cycle mapping loss and pseudo-pair alignment loss.
 
-        Parameters
+        Parameters:
         ----------
-        adatas
-            Datasets (indexed by modality name).
-        graph
-            Guidance graph.
-        max_epochs
-            Max epochs for model training.
-        val_split
-            Validation split
-        mini_batch
-           Whether use mini batch training.
-        iteration
-            Iteration for mini-batch training.
-        dsc_k
-            Number of times the discriminator is trained relative to the generator.
-        cycle_key
-            The modality name to which the cycle mapping loss is applied.
-        fine_tune
-            Whether to perform fine-tuning after training.
-            ** CAUTION **, Not implemented.
+        adatas : Mapping[str, AnnData]
+            A dictionary of AnnData objects to be integrated.
+
+        graph : nx.Graph
+            A graph representing the features of different modalities.
+
+        max_epochs : int, optional (default=None)
+            The maximum number of epochs for training.
+
+        mini_batch : bool, optional (default=False)
+            Whether to use mini-batch training.
+
+        iteration : int, optional (default=1)
+            The number of iterations for mini-batch training.
+
+        dsc_k : int, optional (default=None)
+            The number of times the discriminator is trained for each VAE training step.
+
+        cycle_key : str, optional (default="all")
+            The key indicating which modality to use for calculating cycle mapping loss.
+
+        warmup : bool, optional (default=False)
+            Whether to perform warmup during training.
+
         **kwargs
-            Additional keyword arguments passed to trainer.
-            
+            Additional parameters to be passed to the training function.
         """
         # if(not self._trainer.pretrained):
         #     raise ValueError("Model has not been pretrained, call `pretrain()` first.")
@@ -335,7 +368,7 @@ class SWITCH():
 
             elif(not cycle_key in adatas.keys()):
                 raise ValueError(
-                    f"Please set correct cycle key to train cycle."
+                    f"Please set correct cycle key."
                     )
             else:
                 cycle_key = [cycle_key]
@@ -343,7 +376,7 @@ class SWITCH():
             for i in cycle_key:
                 if(not i in adatas.keys()):
                     raise ValueError(
-                        f"Please set correct cycle key to train cycle."
+                        f"Please set correct cycle."
                         )
         else:
             raise ValueError(
@@ -364,25 +397,33 @@ class SWITCH():
         graph_data = extract_graph(graph, self.vertices)
 
         data_size = max([adata.shape[0] for adata in adatas.values()])
-        dsc_k = dsc_k or ceil(self.TRAIN_DSC / self._trainer.TTUR)
-        max_epochs = max_epochs or min(ceil(self.TRAIN_MIN_EPOCH + 8e-2*pow(1/self._trainer.lr, 0.4)*pow(data_size,0.7)),
-                                       self.TRAIN_MAX_EPOCH)
+        if(max_epochs is None):
+            if(warmup):
+                max_epochs = min(500, 200 + int(data_size / 1e4) * 400)
+            else:
+                max_epochs = min(500, 200 + int(data_size / 1e4) * 1000)
+
         self._net.logger.debug(f"Set `dsc_k` = {dsc_k} for training.")
         self._net.logger.debug(f"Set `max_epochs` = {max_epochs} for training.")
 
         self._trainer.train(data, graph_data, max_epochs=max_epochs, mini_batch=mini_batch, 
-                            iteration=iteration, dsc_k=dsc_k, cycle_key=cycle_key, **kwargs)
-        # if(fine_tune):
-        #     A = self.encode_data(self._net.keys[0],adatas[self._net.keys[0]])
-        #     B = self.encode_data(self._net.keys[1],adatas[self._net.keys[1]])
-        #     parirs, matched_A, matched_B = self._trainer.findMNN(A, B, k=10, metric="euclidean")
-        #     self._net.logger.info(f"Find {len(parirs)} MNN pairs.")
-        #     self._trainer.procrustes(matched_A, matched_B)
+                            iteration=iteration, dsc_k=dsc_k, cycle_key=cycle_key, warmup=warmup, **kwargs)
         self._net.logger.info("Model training done.")
 
     def save(
             self, path: str, overwrite: bool=False
-        )-> None:
+    )-> None:
+        """
+        Saves the model to the specified path.
+
+        Parameters:
+        ----------
+        path : str
+            The path where the model will be saved.
+
+        overwrite : bool, optional (default=False)
+            Whether to overwrite the existing model at the specified path if it exists.
+        """
 
         os_path = Path(path)
         if not os_path.parent.exists():
@@ -399,8 +440,15 @@ class SWITCH():
 
     def load(
             self, path: str
-        )-> None:
+    ) -> None:
+        """
+        Loads the model from the specified path.
 
+        Parameters:
+        ----------
+        path : str
+            The path from which the model will be loaded.
+        """
         if not os.path.exists(path):
             raise ValueError(f"File does not exists: '{path}'.")
         else:
@@ -409,7 +457,9 @@ class SWITCH():
 
     @torch.no_grad()
     def encode_graph(
-            self, graph: nx.Graph, sample: bool = False
+            self,
+            graph: nx.Graph,
+            sample: bool = False
     ) -> np.ndarray:
         """
         Compute graph (feature) embedding
@@ -418,18 +468,15 @@ class SWITCH():
         ----------
         graph
             Input graph
+
         sample
             Whether to sample from the embedding distribution,
             by default ``False``, returns the mean of the embedding distribution.
 
         Returns
         -------
-        graph_embedding
-            Graph (feature) embedding
-            with shape :math:`n_{feature} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{feature} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
+        np.ndarray
+            graph_embedding
         """
         self._net.eval()
         eidx, ewt, esgn = extract_graph(graph, self.vertices)
@@ -447,8 +494,12 @@ class SWITCH():
 
     @torch.no_grad()
     def encode_data(
-            self, key: str, adata: AnnData, sample: bool = False, 
+            self,
+            key: str,
+            adata: AnnData,
+            sample: bool = False, 
             return_library_size: bool = False,
+            return_attention_weights: bool = False
     ) -> np.ndarray:
         r"""
         Compute data (cell) embedding
@@ -457,22 +508,24 @@ class SWITCH():
         ----------
         key
             Modality key.
+
         adata
             Input dataset.
+
         sample
             Whether to sample from the embedding distribution,
             by default ``False``, returns the mean of the embedding distribution.
+
         return_library_size
             Whether to return the library size.
+        
+        return_attention_weights: bool, optional (default=False)
+            Whether to return attention weights of data.
 
         Returns
         -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
+        np.ndarray
+            data_embedding
         """
         self._net.eval()
         encoder = self._net.x2u[key]
@@ -481,23 +534,38 @@ class SWITCH():
         edge_index = data[-2]
        
         result = []
-        u, l = encoder(
+        if(return_attention_weights):
+            u, l, att = encoder(
             x=torch.as_tensor(x, device=self._net.device),
             edge_index=torch.as_tensor(edge_index, device=self._net.device),
-        )
+            return_attention_weights=return_attention_weights)
+        else:
+            u, l = encoder(
+                x=torch.as_tensor(x, device=self._net.device),
+                edge_index=torch.as_tensor(edge_index, device=self._net.device),
+            )
         if sample:
             result.append(u.sample().detach().cpu())
         else:
             result.append(u.mean.detach().cpu())
-        if(return_library_size):
+
+        if(return_library_size and return_attention_weights):
+            return torch.cat(result).numpy(), l, att
+        elif(return_library_size):
             return torch.cat(result).numpy(), l
+        elif(return_attention_weights):
+            return torch.cat(result).numpy(), att
         else:
             return torch.cat(result).numpy()
 
     @torch.no_grad()
     def decode_data(
-            self, source_key: str, target_key: str,
-            adata: AnnData, graph: nx.Graph, sample: bool = False,
+            self,
+            source_key: str,
+            target_key: str,
+            adata: AnnData,
+            graph: nx.Graph,
+            sample: bool = False,
             target_libsize: Optional[Union[float, np.ndarray]] = None,
             target_batch: Optional[np.ndarray] = None,
     ) -> np.ndarray:
@@ -508,22 +576,28 @@ class SWITCH():
         ----------
         source_key
             Source modality key
+
         target_key
             Target modality key
+
         adata
             Source modality data
+
         graph
             Guidance graph
+
         sample
             Whether to sample from the decoder distribution,
+
         target_libsize
             Target modality library size, by default 1.0
+
         target_batch
             Target modality batch, by default batch 0
 
         Returns
         -------
-        decoded
+        np.ndarray
             Decoded data
 
         """
@@ -571,12 +645,48 @@ class SWITCH():
     
     @torch.no_grad()
     def impute_data(
-            self, source_key: str, target_key: str, 
-            source_adata: AnnData, target_adata: AnnData,
-            graph: nx.Graph, sample: bool =False,
-            target_libsize: Optional[Union[float, np.ndarray]] = None,
+            self,
+            source_key: str,
+            target_key: str, 
+            source_adata: AnnData,
+            target_adata: AnnData,
+            graph: nx.Graph, sample: bool=False,
+            target_libsize: Optional[Union[float, np.ndarray]]=None,
             target_batch: Optional[np.ndarray] = None,
         ):
+        """
+        Impute data
+
+        Parameters
+        ----------
+        source_key
+            Source modality key
+
+        target_key
+            Target modality key
+
+        source adata
+            Source modality data
+
+        target_adata
+            Target modality data
+
+        graph
+            Guidance graph
+
+        target_libsize
+            Target modality library size, by default 1.0
+
+        target_batch
+            Target modality batch, by default batch 0
+
+        Returns
+        -------
+        np.ndarray
+            Imputed data
+
+        """
+
         self._net.eval()
         decoder = self._net.u2x[target_key]
         l = target_libsize or 1.0
