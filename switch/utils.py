@@ -12,6 +12,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import normalize
 from scipy.stats import rankdata
 import scanpy as sc
+from tqdm import tqdm
 from .preprocess import rna_anchored_guidance_graph
 
 
@@ -420,6 +421,7 @@ def integration_score(
         corrupt_rate: float=None,
         eval_on_paired_data: bool=False,
         verbose: bool=False,
+        n_perm: int=0,
         **kwargs
 ) -> float:
     """
@@ -467,6 +469,9 @@ def integration_score(
     
     verbose : bool, optional (default=False)
         If True, prints progress messages.
+    
+    n_perm : int, optional (default=0)
+        Number of permutations for normalization.
 
     **kwargs
         Additional arguments to be passed to the function.
@@ -593,7 +598,7 @@ def integration_score(
         meta_df = pd.DataFrame(meta_expr, index=unique_labels, columns=gene_names)
         return meta_df
 
-    def _enrichment_score(df_matrix: pd.DataFrame, true_pairs: set) -> float:
+    def _enrichment_score(df_matrix: pd.DataFrame, true_pairs: set, n_perm: int = 100) -> float:
         """
         Computes the enrichment score based on the given data matrix and true pairs.
 
@@ -604,6 +609,9 @@ def integration_score(
 
         true_pairs : set
             A set of true pairs used to compute the enrichment score.
+        
+        n_perm : int, optional (default=100)
+            Number of permutations for normalization.
 
         Returns:
         -------
@@ -633,6 +641,19 @@ def integration_score(
             increment_miss = (1 - hits_sorted) / N_miss
             running_sum = np.cumsum(increment_hit - increment_miss)
             enrichment_score = np.max(np.abs(running_sum))
+        
+        if(n_perm > 0):
+            es_perm = []
+            for _ in tqdm(range(n_perm), desc='Permutation:'):
+                np.random.shuffle(hits_sorted)
+                inc_hit_perm = hits_sorted / N_hit
+                inc_miss_perm = (1 - hits_sorted) / N_miss
+                rs_perm = np.cumsum(inc_hit_perm - inc_miss_perm)
+                es_perm.append(np.max(np.abs(rs_perm)))
+            
+            es_perm = np.array(es_perm)
+            es_mean = np.mean(np.abs(es_perm)) + 1e-8 
+            enrichment_score = enrichment_score / (es_mean * 35) # prevent excessive es
 
         return enrichment_score
     
@@ -747,7 +768,7 @@ def integration_score(
         meta2 = meta2.loc[shuffled_idx,] 
 
     corr_df = corr_func(meta1, meta2)
-    es = _enrichment_score(corr_df, true_pairs, **kwargs)
+    es = _enrichment_score(corr_df, true_pairs, n_perm=n_perm, **kwargs)
     es = es / scale_factor if scale else es
 
     return es * delta
