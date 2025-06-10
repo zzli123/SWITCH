@@ -29,7 +29,7 @@ In our study, we compared SWITCH with 9 state-of-the-art single-cell multi-omics
 ## Testing
 The `tests` directory contains pytest scripts for automated testing of core functionalities. To run all tests, execute:
 ```
-pytest /tests
+pytest tests/
 ```
 
 ## Support
