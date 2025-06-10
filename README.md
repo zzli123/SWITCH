@@ -13,7 +13,7 @@ pip install -r requirement.txt
 ## Data
 Example datasets for tutorials can be downloaded from the following link: [Benchmark datasets for SWITCH](https://zenodo.org/records/15602076)
 
-To facilitate processing of GEO-downloaded raw data, we provide dedicated scripts in the `preprocess` folder.
+To facilitate processing of GEO-downloaded raw data, we also provide dedicated scripts in the `preprocess` folder.
 
 ## Tutorials
 The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show how to use SWITCH.  Running Tutorial 1 is expected to take around 10 minutes.
@@ -32,7 +32,6 @@ You can run the tests using:
 ```
 cd tests
 pytest
-
 ```
 
 ## Support
