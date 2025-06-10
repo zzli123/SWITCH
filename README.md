@@ -11,7 +11,7 @@ pip install -r requirement.txt
 ```
 
 ## Data
-Example datasets for tutorials can be downloaded from the following link: [https://zenodo.org/records/15602076]
+Example datasets for tutorials can be downloaded from the following link: [Benchmark datasets for SWITCH](https://zenodo.org/records/15602076)
 
 ## Tutorials
 The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show how to use SWITCH.  Running Tutorial 1 is expected to take around 10 minutes.
