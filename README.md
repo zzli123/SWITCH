@@ -12,7 +12,8 @@ pip install -r requirement.txt
 
 ## Data
 Example datasets for tutorials can be downloaded from the following link: [Benchmark datasets for SWITCH](https://zenodo.org/records/15602076)
-Note: All data required to run the step-by-step tutorials is provided in this link. To facilitate processing of GEO-downloaded raw data, we provide dedicated scripts in the `preprocess` folder.
+
+To facilitate processing of GEO-downloaded raw data, we provide dedicated scripts in the `preprocess` folder.
 
 ## Tutorials
 The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show how to use SWITCH.  Running Tutorial 1 is expected to take around 10 minutes.
@@ -24,6 +25,15 @@ The step-by-step tutorials are included in the `Benchmark/SWITCH` folder to show
 
 ## Benchmarking
 In our study, we compared SWITCH with 9 state-of-the-art single-cell multi-omics integration methods, including Seurat (V3), LIGER, BindSC, GLUE, SCALEX, MaxFuse, SIMBA, scConfluence and Monae, as well as with 4 state-of-the-art cross-modal translation methods, including JAMIE, MultiVI, scButterfly, and Monae. Jupyter notebooks covering the benchmarking analysis in this paper are included in the `Benchmark/others` folder.
+
+## Testing
+Automated tests are provided to ensure code correctness and reproducibility. All pytest scripts are located in the `tests` folder.
+You can run the tests using:
+```
+cd tests
+pytest
+
+```
 
 ## Support
 If you have any questions, please contact us [zzli@tongji.edu.cn](mailto:zzli@tongji.edu.cn).
