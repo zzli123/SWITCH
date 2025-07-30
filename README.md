@@ -8,6 +8,7 @@ cd SWITCH-main
 conda create --name switch_env python=3.8
 conda activate switch_env
 pip install -r requirement.txt
+pip install torch==2.1.1+cu121 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## Data
