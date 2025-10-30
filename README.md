@@ -1,4 +1,4 @@
-# SWITCH: deep generative model for spatial multi-omics integration and cross-modal prediction
+# Integrative deep learning of spatial multi-omics with SWITCH
 
 ## Installation
 The installation will take approximately 10 minutes.
