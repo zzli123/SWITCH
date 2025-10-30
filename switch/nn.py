@@ -13,52 +13,48 @@ import torch.nn.functional as F
 from . import model
 
 class SWITCH_nn(torch.nn.Module):
-    """
-    SWITCH  model architecture for multi-modal data integration.
-
-    Parameters:
-    ----------
-    g2v : model.GraphEncoder
-        The graph encoder for feature graph encoding.
-
-    v2g : model.GraphDecoder
-        The graph decoder for feature graph decoding.
-
-    x2u : Mapping[str, model.DataEncoder]
-        A mapping of data encoders for different modalities.
-
-    u2x : Mapping[str, model.NBDataDecoder]
-        A mapping of data decoders for different modalities.
-
-    idx : Mapping[str, torch.Tensor]
-        A mapping of indices for the features of different modalities.
-
-    adj : Mapping[str, torch.Tensor]
-        A mapping of adjacency matrices for different modalities.
-
-    du : model.Discriminator
-        The discriminator used for distinguishing  different modalities.
-
-    prior : model.Prior
-        The prior distribution used in the model.
-
-    logger : logging.StreamHandler
-        The logger for logging output.
-
-    normalize_methods : dict
-        A dictionary of normalization methods for different modalities.
-    """
     def __init__(
-            self, g2v: model.GraphEncoder, v2g: model.GraphDecoder,
+            self,
+            g2v: model.GraphEncoder,
+            v2g: model.GraphDecoder,
             x2u: Mapping[str, model.DataEncoder],
             u2x: Mapping[str, model.NBDataDecoder],
             idx: Mapping[str, torch.Tensor],
-            adj: Mapping[str, torch.Tensor],
             du: model.Discriminator,
             prior: model.Prior,
             logger: logging.StreamHandler,
-            normalize_methods: dict
+            device: torch.device = None
     ) -> None:
+        """
+        SWITCH  model architecture for multi-modal data integration.
+
+        Parameters:
+        ----------
+        g2v : model.GraphEncoder
+            The graph encoder for feature graph encoding.
+
+        v2g : model.GraphDecoder
+            The graph decoder for feature graph decoding.
+
+        x2u : Mapping[str, model.DataEncoder]
+            A mapping of data encoders for different modalities.
+
+        u2x : Mapping[str, model.NBDataDecoder]
+            A mapping of data decoders for different modalities.
+
+        idx : Mapping[str, torch.Tensor]
+            A mapping of indices for the features of different modalities.
+
+        du : model.Discriminator
+            The discriminator used for distinguishing  different modalities.
+
+        prior : model.Prior
+            The prior distribution used in the model.
+
+        logger : logging.StreamHandler
+            The logger for logging output.
+        """
+
         super().__init__()
         if not set(x2u.keys()) == set(u2x.keys()) == set(idx.keys()) != set():
             raise ValueError(
@@ -66,7 +62,6 @@ class SWITCH_nn(torch.nn.Module):
                 "and non-empty!"
             )
         self.keys = list(idx.keys())  # Keeps a specific order
-        self.normalize_methods = normalize_methods
 
         self.g2v = g2v
         self.v2g = v2g
@@ -77,13 +72,7 @@ class SWITCH_nn(torch.nn.Module):
         self.du = du
         self.prior = prior
         self.logger = logger
-        self.device = self.autodevice()
-
-        self.adj = adj
-        self.paired_idx = None
-        self.adj_weight = None
-        self.filtered_idx1 = None
-        self.filtered_idx2 = None
+        self.device = device if device else self.autodevice() 
 
     @property
     def device(self) -> torch.device:
